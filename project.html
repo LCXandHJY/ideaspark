@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block title %}{{ p.name }} · IdeaSpark{% endblock %}
+{% block content %}
+<section class="ws-head">
+  <div>
+    <h1>{{ p.name }}</h1>
+    <p class="dim">💡 {{ p.idea }}</p>
+  </div>
+  <div class="ws-actions">
+    {% if p.published %}
+      <a class="btn live-btn" href="/p/{{ p.slug }}" target="_blank">🌐 查看线上页</a>
+      <form method="post" action="{{ url_for('unpublish', pid=p.id) }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button class="btn ghost">下线</button>
+      </form>
+    {% elif p.current_version_id %}
+      <a class="btn big" href="#publish">🚀 前往发布</a>
+    {% endif %}
+    <form method="post" action="{{ url_for('delete_project', pid=p.id) }}"
+          onsubmit="return confirm('确定删除整个项目？不可恢复。')">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <button class="btn ghost" type="submit" title="删除项目">🗑 删除</button>
+    </form>
+  </div>
+</section>
+
+{# ---------- stepper ---------- #}
+{% set step = 4 if p.published else (3 if cur else 2) %}
+<ol class="stepper">
+  <li class="done">
+    <b>✓</b><span>创建项目</span>
+  </li>
+  <li class="{{ 'done' if step>2 else 'active' }}">
+    <b>2</b><span>需求澄清 / 生成</span>
+  </li>
+  <li class="{{ 'done' if step>3 else 'active' if step==3 }}">
+    <b>3</b><span>选方案 + 迭代</span>
+  </li>
+  <li class="{{ 'done' if step>4 else 'active' if step==4 }}">
+    <b>4</b><span>发布获客</span>
+  </li>
+</ol>
+
+{# ---------- clarify / live team stream ---------- #}
+{% if not arts and not config %}
+<section class="panel" id="live-panel">
+  {% if run %}
+  <h2>🛠️ 虚拟团队实时工作中</h2>
+  <div id="feed" class="proc-feed"></div>
+  {% else %}
+  <h2>❓ 团队需要你先确认几个配置</h2>
+  <p class="dim sm">选择下方配置后，虚拟团队会据此生成调研、PRD 和落地页方案。</p>
+  {% endif %}
+  <div class="q-card" id="questionsCard" {% if run %}hidden{% endif %}>
+    <div class="q-head">Questions</div>
+    <form method="post" action="{{ url_for('configure', pid=p.id) }}" id="configForm">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <p class="q-intro">请从以下选项中选择你需要的配置（单选项每类请选一项，多选项可勾选多个）：</p>
+      {% for q in questions %}
+      <fieldset class="q-group" data-key="{{ q.key }}">
+        <legend>{{ loop.index }}. {{ q.title }} <span class="dim sm">（{{ '多选' if q.type == 'multi' else '单选' }}）</span></legend>
+        {% if q.type == 'multi' %}
+        <label class="q-opt select-all"><input type="checkbox" class="sa"><b>全选</b></label>
+        {% endif %}
+        {% for o in q.options %}
+        <label class="q-opt">
+          <input type="{{ 'checkbox' if q.type == 'multi' else 'radio' }}"
+                 name="{{ q.key }}" value="{{ o.value }}"
+                 {% if q.type == 'single' and loop.first %}checked{% endif %}>
+          <b>{{ o.label }}</b><span class="dim sm">{{ o.desc }}</span>
+        </label>
+        {% endfor %}
+      </fieldset>
+      {% endfor %}
+      <button class="btn big" type="submit">确认配置，开始生成 →</button>
+    </form>
+  </div>
+  {% if run %}<p class="dim sm" style="margin-top:12px">💡 正在等待你完成上方配置…</p>{% endif %}
+</section>
+{% if run %}<script src="{{ url_for('static', filename='app.js') }}" data-pid="{{ p.id }}"></script>{% endif %}
+{% elif run and not arts %}
+<section class="panel" id="live-panel">
+  <h2>🛠️ 虚拟团队实时工作中</h2>
+  <div id="feed" class="proc-feed"></div>
+  <p class="dim sm" style="margin-top:12px">💡 五位角色正在并行工作，产出完成后会自动跳到下一步。</p>
+</section>
+<script src="{{ url_for('static', filename='app.js') }}" data-pid="{{ p.id }}"></script>
+{% endif %}
+
+{# ---------- race mode ---------- #}
+{% set races = versions | selectattr('variant', 'in', ['A','B']) | list %}
+{% if races %}
+<section class="panel" id="race">
+  <h2>🏁 Step 3 · 选择方案 <span class="dim sm">（双方案赛马，选择其一作为当前版本，可随时改选）</span></h2>
+  <div class="race-grid">
+    {% for v in races %}
+    <div class="race-card {{ 'chosen' if cur and cur.id == v.id }}">
+      <div class="race-head">
+        <strong>方案 {{ v.variant }}</strong><span class="dim sm">{{ v.note }}</span>
+        {% if cur and cur.id == v.id %}<span class="pill ok">✓ 当前版本</span>{% endif %}
+      </div>
+      <iframe src="{{ url_for('preview', pid=p.id, vid=v.id) }}" loading="lazy"></iframe>
+      <form method="post" action="{{ url_for('choose', pid=p.id, vid=v.id) }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button class="btn" type="submit">采纳方案 {{ v.variant }} →</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% if not cur %}<p class="tip">↑ 请先选择一个方案，才能进入迭代与发布。</p>{% endif %}
+</section>
+{% endif %}
+
+{% if cur %}
+{# ---------- iterate ---------- #}
+<section class="panel" id="iterate">
+  <h2>💬 Step 3 · 对话式迭代 <span class="dim sm">（不满意就改，每改一次存一个版本）</span></h2>
+  <div class="iter-grid">
+    <iframe class="cur-preview" src="{{ url_for('preview', pid=p.id, vid=cur.id) }}"></iframe>
+    <div>
+      <div class="cmd-chips">
+        <button class="chip" data-cmd="换深色主题">🌙 换深色主题</button>
+        <button class="chip" data-cmd="主题换绿色">🟢 换绿色</button>
+        <button class="chip" data-cmd="加上价格板块">💰 加价格</button>
+        <button class="chip" data-cmd="加上用户评价">💬 加评价</button>
+        <button class="chip" data-cmd="标题改成{{ p.name }}Pro">✏️ 改标题</button>
+      </div>
+      <form method="post" action="{{ url_for('iterate', pid=p.id) }}" class="iter-form" id="iterForm">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input name="cmd" id="cmdInput" required placeholder="用一句话指挥团队改页面…">
+        <button class="btn" type="submit">迭代</button>
+      </form>
+      <h3 class="sm-title">版本历史（点击可回退）</h3>
+      <ul class="ver-list">
+        {% for v in versions %}
+        <li class="{{ 'cur' if cur.id == v.id }}">
+          <form method="post" action="{{ url_for('choose', pid=p.id, vid=v.id) }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button class="link" type="submit">v{{ versions|length - loop.index + 1 }} · {{ v.note[:40] }}</button>
+          </form>
+          <span class="dim sm">{{ v.created_at | round | int | datetime }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</section>
+
+{# ---------- demand backlog ---------- #}
+<section class="panel" id="todos">
+  <h2>🗒 需求待办 <span class="dim sm">（AI 暂不理解的迭代指令会自动收集到这里）</span></h2>
+  {% set open_todos = todos | selectattr('status','equalto','open') | list %}
+  {% set done_todos = todos | rejectattr('status','equalto','open') | list %}
+  {% if not todos %}<p class="dim">暂无待办。对 AI 说出它暂时做不到的需求，就会沉淀在这里。</p>{% endif %}
+  <ul class="todo-list">
+    {% for t in open_todos %}
+    <li class="open">
+      <span>{{ t.text }}</span>
+      <span class="todo-actions">
+        <form method="post" action="{{ url_for('todo_done', pid=p.id, tid=t.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <button class="mini" type="submit">✓ 已解决</button>
+        </form>
+        <form method="post" action="{{ url_for('todo_drop', pid=p.id, tid=t.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <button class="mini danger" type="submit">删除</button>
+        </form>
+      </span>
+    </li>
+    {% endfor %}
+    {% for t in done_todos %}
+    <li class="done-t"><span class="dim">✓ {{ t.text }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+<section class="panel" id="publish">
+  <h2>🚀 Step 4 · 发布上线</h2>
+  {% if not p.published %}
+  <div class="publish-card">
+    <p>一切就绪？点击下方按钮，把当前版本发布到公网，生成一个<strong>真实可访问</strong>的链接。</p>
+    <p class="dim sm">发布后，访问量与订阅线索会实时回流到下方看板。</p>
+    <form method="post" action="{{ url_for('publish', pid=p.id) }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <button class="btn big" type="submit">🚀 一键发布到公网</button>
+    </form>
+  </div>
+  {% else %}
+  <div class="publish-card done">
+    <p>✅ 已发布！分享这个链接获取首批用户：</p>
+    <div class="url-box">{{ request.host_url }}p/{{ p.slug }}</div>
+    <div class="publish-actions">
+      <a class="btn live-btn" href="/p/{{ p.slug }}" target="_blank">🌐 在新标签打开</a>
+      <button class="btn ghost" onclick="navigator.clipboard?.writeText('{{ request.host_url }}p/{{ p.slug }}')">📋 复制链接</button>
+    </div>
+    <form method="post" action="{{ url_for('unpublish', pid=p.id) }}" style="margin-top:14px">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <button class="btn ghost" type="submit">下线此页面</button>
+    </form>
+  </div>
+  {% endif %}
+</section>
+
+{# ---------- analytics ---------- #}
+<section class="panel" id="analytics">
+  <h2>📊 增长看板
+    <span class="dim sm">{% if p.published %}每 15 秒自动刷新 ·{% endif %} 数据更新于 <span id="statTime">刚刚</span></span>
+    <button class="btn ghost sm-btn" id="refreshStats" type="button">🔄 刷新</button>
+  </h2>
+  <div class="stat-row">
+    <div class="stat"><b id="stViews">{{ stats.views }}</b><span>总访问 PV</span></div>
+    <div class="stat"><b id="stUv">{{ stats.uv }}</b><span>独立访客 UV</span></div>
+    <div class="stat"><b id="stLeads">{{ stats.leads }}</b><span>订阅线索</span></div>
+    <div class="stat"><b id="stConv">{{ '%.1f' | format(stats.leads / stats.views * 100 if stats.views else 0) }}%</b><span>访问→订阅转化</span></div>
+  </div>
+  {% if daily %}
+  <div class="chart" id="chart">
+    {% set mx = daily | map(attribute='c') | max %}
+    {% for d in daily %}
+    <div class="bar-col">
+      <div class="bar" data-c="{{ d.c }}" style="height:{{ (d.c / mx * 120) | round | int }}px" title="{{ d.d }}: {{ d.c }}次"></div>
+      <span>{{ d.d[5:] }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="two-col">
+    <div>
+      <h3 class="sm-title">✉️ 等待名单</h3>
+      {% if leads %}<ul class="mini-list">{% for l in leads %}<li>{{ l.email }} <span class="dim sm">{{ l.ts | round | int | datetime }}</span></li>{% endfor %}</ul>
+      {% else %}<p class="dim">暂无线索，把线上页分享出去试试。</p>{% endif %}
+    </div>
+    <div>
+      <h3 class="sm-title">👀 最近访问</h3>
+      {% if recent %}<ul class="mini-list">{% for v in recent %}<li>{{ v.ts | round | int | datetime }} · {{ v.ua[:42] }}</li>{% endfor %}</ul>
+      {% else %}<p class="dim">暂无访问记录。</p>{% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# ---------- artifacts ---------- #}
+{% if arts %}
+<section class="panel" id="archive">
+  <h2>🗂️ 团队产出档案</h2>
+  {% for a in arts %}
+  <details class="artifact" {{ 'open' if loop.first }}>
+    <summary><strong>{{ a.agent }}</strong> · {{ a.title }}</summary>
+    <pre class="md">{{ a.content }}</pre>
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
+
+<script>
+// 快捷指令 chip 填入输入框
+document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
+  const i = document.getElementById('cmdInput'); if (i) { i.value = c.dataset.cmd; i.focus(); }
+}));
+// 采纳/迭代后滚到对应锚点（hash 已由 Flask 重定向设置，再平滑滚一次）
+if (location.hash) setTimeout(() => document.querySelector(location.hash)?.scrollIntoView({behavior:'smooth', block:'start'}), 100);
+
+// 看板数据局部刷新
+async function refreshStats() {
+  try {
+    const r = await fetch('/project/{{ p.id }}/stats.json', {headers:{'Accept':'application/json'}});
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('stViews').textContent = d.views;
+    document.getElementById('stUv').textContent = d.uv;
+    document.getElementById('stLeads').textContent = d.leads;
+    document.getElementById('stConv').textContent = d.conv + '%';
+    document.getElementById('statTime').textContent = new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    // 柱状图
+    const chart = document.getElementById('chart');
+    if (chart && d.daily.length) {
+      const mx = Math.max(...d.daily.map(x => x.c), 1);
+      chart.querySelectorAll('.bar-col').forEach((col, i) => {
+        const day = d.daily[i];
+        if (day) {
+          const bar = col.querySelector('.bar');
+          bar.style.height = Math.round(day.c / mx * 120) + 'px';
+          bar.title = day.d + ': ' + day.c + '次';
+        }
+      });
+    }
+  } catch (e) { /* 静默：网络抖动不打扰用户 */ }
+}
+document.getElementById('refreshStats')?.addEventListener('click', refreshStats);
+{% if p.published %}setInterval(refreshStats, 15000);{% endif %}
+</script>
+{% endblock %}

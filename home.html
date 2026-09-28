@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero-site">
+  <div class="badge-row"><span class="pill">多智能体协作</span><span class="pill">Race Mode</span><span class="pill">一键发布</span></div>
+  <h1>一句话想法<br><em>一支 AI 团队替你上线</em></h1>
+  <p class="lead">输入商业想法，研究员、产品经理、架构师、工程师、运营五位 AI 角色即刻开工，
+  产出调研、PRD、技术方案与<strong>真实可访问的落地页</strong>，并持续收集订阅线索与访问数据。</p>
+</section>
+
+{% if me %}
+<section class="panel" id="new">
+  <h2>🚀 发起新项目</h2>
+  <form class="new-form" method="post" action="{{ url_for('new_project') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <textarea name="idea" required minlength="6" rows="3"
+      placeholder="用一句话说清你想做什么，如：帮我做个早起打卡营，帮助一线城市上班族通过 21 天打卡养成早起习惯，解决一个人坚持不下来的问题"></textarea>
+    <p class="dim sm">💡 只需一句话，AI 会自动识别产品名、目标人群和痛点。</p>
+    <button class="btn big" type="submit">召唤 AI 团队开工 →</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>📁 我的项目</h2>
+  {% if projects %}
+  <div class="proj-grid">
+    {% for p in projects %}
+    <div class="proj-card">
+      <a class="proj-link" href="{{ url_for('workspace', pid=p.id) }}">
+        <h3>{{ p.name }}</h3>
+        <p class="dim">{{ p.idea[:60] }}{% if p.idea|length > 60 %}…{% endif %}</p>
+        <div class="meta">
+          <span>👀 {{ p.views }}</span><span>✉️ {{ p.leads }}</span>
+          {% if p.published %}<span class="live">● 已上线</span>{% else %}<span class="dim">草稿</span>{% endif %}
+        </div>
+      </a>
+      <form class="del-form" method="post" action="{{ url_for('delete_project', pid=p.id) }}"
+            onsubmit="return confirm('确定删除「{{ p.name }}」？访问数据与订阅线索都会一并清除。')">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button class="del-btn" type="submit" title="删除项目">🗑</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}<p class="dim">还没有项目，从上方发起第一个吧。</p>{% endif %}
+</section>
+{% else %}
+<section class="panel center">
+  <h2>三步把想法变成业务</h2>
+  <div class="proj-grid">
+    <div class="proj-card"><h3>1️⃣ 说出想法</h3><p class="dim">一句话描述，无需写 PRD、无需懂技术</p></div>
+    <div class="proj-card"><h3>2️⃣ 团队开工</h3><p class="dim">五位 AI 角色实时协作，产出全程可见</p></div>
+    <div class="proj-card"><h3>3️⃣ 上线获客</h3><p class="dim">落地页真实发布，订阅线索与数据回流看板</p></div>
+  </div>
+  <p style="margin-top:26px"><a class="btn big" href="{{ url_for('register') }}">免费开始 →</a></p>
+</section>
+{% endif %}
+{% endblock %}
