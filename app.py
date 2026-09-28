@@ -14,7 +14,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import db
 import generator as gen
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='.')
 app.secret_key = os.environ.get("IDEASPARK_SECRET") or secrets.token_hex(32)
 
 # 免 CSRF 的端点（公开落地页订阅：匿名表单，用蜜罐 + 邮箱去重防护）
